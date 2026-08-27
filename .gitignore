@@ -1,0 +1,44 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Xcode 用户状态(每台机器/每个人不同,不应入库)
+xcuserdata/
+*.xcuserstate
+*.xcscmblueprint
+*.xccheckout
+
+# Xcode 构建产物
+build/
+DerivedData/
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# Swift Package Manager
+.build/
+.swiftpm/
+Package.resolved
+
+# CocoaPods(如将来使用)
+Pods/
+
+# Carthage(如将来使用)
+Carthage/Build/
+
+# fastlane(如将来使用)
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/screenshots/**/*.png
+fastlane/test_output
+
+# 代码注入/性能分析
+*.gcno
+*.gcda
+*.profdata
+
+# 临时文件
+*.swp
+*.swo
+*~
