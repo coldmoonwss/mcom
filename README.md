@@ -1,6 +1,6 @@
 # mcom
 
-macOS 串口调试工具，布局参考 LLCOM，专为快捷发送 AT 命令设计。SwiftUI 原生实现，零第三方依赖。
+macOS 串口调试工具，布局参考 [LLCOM](https://github.com/chenxuuu/llcom)，专为快捷发送 AT 命令设计。SwiftUI 原生实现，零第三方依赖。
 
 ![mcom 主界面](docs/screenshot.png)
 
