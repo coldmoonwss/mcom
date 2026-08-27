@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct ContentView: View {
     @Environment(SerialManager.self) private var serial
@@ -383,18 +384,25 @@ struct FlowLayout: Layout {
     }
 }
 
-// MARK: - 右栏:快捷命令
+// MARK: - 右栏:快捷命令(分页)
 
 struct QuickCommandPanel: View {
     @Environment(SerialManager.self) private var serial
     @Environment(QuickCommandStore.self) private var store
 
     @State private var renaming: QuickCommand?
+    @State private var renamingPage: QuickCommandPage?
+    @State private var deletingPage: QuickCommandPage?
+    @State private var importError: String?
 
     var body: some View {
         VStack(spacing: 0) {
+            pageTabBar
+
+            Divider()
+
             List {
-                ForEach(Array(store.commands.enumerated()), id: \.element.id) { index, command in
+                ForEach(Array(store.selectedPage.commands.enumerated()), id: \.element.id) { index, command in
                     QuickCommandRow(
                         index: index + 1,
                         command: command,
@@ -418,10 +426,23 @@ struct QuickCommandPanel: View {
                 } label: {
                     Image(systemName: "plus")
                 }
+                .help("添加命令")
+
                 Spacer()
-                Text("右键可重命名/删除")
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
+
+                Button {
+                    exportCurrentPage()
+                } label: {
+                    Image(systemName: "square.and.arrow.up")
+                }
+                .help("导出当前页")
+
+                Button {
+                    importPage()
+                } label: {
+                    Image(systemName: "square.and.arrow.down")
+                }
+                .help("导入为新页")
             }
             .padding(8)
             .controlSize(.small)
@@ -431,18 +452,136 @@ struct QuickCommandPanel: View {
                 store.update(edited)
             }
         }
+        .sheet(item: $renamingPage) { page in
+            PageNameEditor(name: page.name) { name in
+                store.renamePage(page, name: name)
+            }
+        }
+        .alert("删除页", isPresented: Binding(
+            get: { deletingPage != nil },
+            set: { if !$0 { deletingPage = nil } }
+        )) {
+            Button("删除", role: .destructive) {
+                if let page = deletingPage { store.deletePage(page) }
+                deletingPage = nil
+            }
+            Button("取消", role: .cancel) { deletingPage = nil }
+        } message: {
+            if let page = deletingPage {
+                Text("「\(page.name)」包含 \(page.commands.count) 条命令,确定删除吗?")
+            }
+        }
+        .alert("导入失败", isPresented: Binding(
+            get: { importError != nil },
+            set: { if !$0 { importError = nil } }
+        )) {
+            Button("确定") { importError = nil }
+        } message: {
+            Text(importError ?? "")
+        }
+    }
+
+    /// 页签条:点击切换,尾部 + 添加页,右键重命名/导出/删除。
+    private var pageTabBar: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) {
+                ForEach(store.pages) { page in
+                    let selected = page.id == store.selectedPageID
+                    Text(page.name)
+                        .font(.callout)
+                        .lineLimit(1)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 4)
+                        .background(
+                            Capsule().fill(selected
+                                           ? Color.accentColor
+                                           : Color.secondary.opacity(0.15))
+                        )
+                        .foregroundStyle(selected ? .white : .primary)
+                        .contentShape(Capsule())
+                        .onTapGesture { store.selectPage(page) }
+                        .contextMenu {
+                            Button("重命名") { renamingPage = page }
+                            Button("导出此页") { export(page) }
+                            Divider()
+                            Button("删除", role: .destructive) {
+                                if page.commands.isEmpty {
+                                    store.deletePage(page)
+                                } else {
+                                    deletingPage = page
+                                }
+                            }
+                            .disabled(store.pages.count <= 1)
+                        }
+                }
+
+                Button {
+                    store.addPage()
+                } label: {
+                    Image(systemName: "plus")
+                        .font(.callout)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+                .help("添加页")
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
+        }
     }
 
     /// 命令内容直接绑定到 Store,输入即保存。
     private func commandBinding(for id: QuickCommand.ID) -> Binding<String> {
         Binding(
-            get: { store.commands.first(where: { $0.id == id })?.command ?? "" },
+            get: {
+                store.selectedPage.commands.first(where: { $0.id == id })?.command ?? ""
+            },
             set: { newValue in
-                guard var command = store.commands.first(where: { $0.id == id }) else { return }
+                guard var command = store.selectedPage.commands.first(where: { $0.id == id }) else { return }
                 command.command = newValue
                 store.update(command)
             }
         )
+    }
+
+    // MARK: - 导入导出
+
+    private func exportCurrentPage() {
+        export(store.selectedPage)
+    }
+
+    private func export(_ page: QuickCommandPage) {
+        guard let data = store.exportPage(page) else {
+            importError = "导出失败:无法编码当前页"
+            return
+        }
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = "\(page.name).json"
+        panel.allowedContentTypes = [.json]
+        panel.message = "导出快捷命令页"
+        if panel.runModal() == .OK, let url = panel.url {
+            do {
+                try data.write(to: url)
+            } catch {
+                importError = "写入文件失败:\(error.localizedDescription)"
+            }
+        }
+    }
+
+    private func importPage() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowedContentTypes = [.json]
+        panel.message = "选择要导入的快捷命令 JSON 文件"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            let data = try Data(contentsOf: url)
+            let fallback = url.deletingPathExtension().lastPathComponent
+            try store.importPage(from: data, fallbackName: fallback)
+        } catch {
+            importError = error.localizedDescription
+        }
     }
 }
 
@@ -497,6 +636,32 @@ struct QuickCommandNameEditor: View {
         }
         .padding(16)
         .frame(width: 320)
+    }
+}
+
+/// 页重命名弹窗。
+struct PageNameEditor: View {
+    @Environment(\.dismiss) private var dismiss
+    @State var name: String
+    let onSave: (String) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("重命名页").font(.headline)
+            TextField("页名称", text: $name)
+            HStack {
+                Spacer()
+                Button("取消") { dismiss() }
+                    .keyboardShortcut(.cancelAction)
+                Button("保存") {
+                    onSave(name)
+                    dismiss()
+                }
+                .keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(16)
+        .frame(width: 280)
     }
 }
 

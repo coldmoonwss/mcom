@@ -35,14 +35,14 @@ final class AppSettings {
 
         var label: String {
             switch self {
-            case .arrow: return "箭头 → ←"
+            case .arrow: return "箭头 ← →"
             case .chinese: return "中文 收/发"
             }
         }
 
         func marker(isTX: Bool) -> String {
             switch self {
-            case .arrow: return isTX ? "→" : "←"
+            case .arrow: return isTX ? "←" : "→"
             case .chinese: return isTX ? "发" : "收"
             }
         }
