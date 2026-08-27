@@ -4,7 +4,7 @@ macOS 串口调试工具，布局参考 [LLCOM](https://github.com/chenxuuu/llco
 
 ![mcom 主界面](docs/screenshot.png)
 
-![macOS](https://img.shields.io/badge/macOS-26.5+-blue) ![Swift](https://img.shields.io/badge/Swift-5-orange)
+![macOS](https://img.shields.io/badge/macOS-26.5+-blue) ![Swift](https://img.shields.io/badge/Swift-5-orange) ![License](https://img.shields.io/badge/License-GPLv3-green)
 
 ## 功能
 
@@ -47,3 +47,7 @@ xcodebuild -project mcom.xcodeproj -scheme mcom -configuration Debug build
 
 - macOS 26.5+
 - Xcode 26+
+
+## 开源协议
+
+本项目基于 [GPL v3](LICENSE) 协议开源。
