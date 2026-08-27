@@ -2,6 +2,8 @@
 
 macOS 串口调试工具，布局参考 LLCOM，专为快捷发送 AT 命令设计。SwiftUI 原生实现，零第三方依赖。
 
+![mcom 主界面](docs/screenshot.png)
+
 ![macOS](https://img.shields.io/badge/macOS-26.5+-blue) ![Swift](https://img.shields.io/badge/Swift-5-orange)
 
 ## 功能
