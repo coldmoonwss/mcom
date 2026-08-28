@@ -24,22 +24,22 @@ struct LogEntry: Identifiable {
 final class SerialManager {
     // MARK: - 端口与参数
     var availablePorts: [String] = []
-    var selectedPort: String = ""
-    var selectedBaud: Int = 115_200
+    private(set) var selectedPort: String
+    private(set) var selectedBaud: Int
     private(set) var isOpen = false
 
     // MARK: - 统计
     private(set) var txBytes = 0
     private(set) var rxBytes = 0
 
-    // MARK: - 选项
-    private(set) var rtsEnabled = false
-    private(set) var dtrEnabled = false
-    var hexDisplay = false
-    var hexSend = false
-    var appendCRLF = true
-    var replaceInvisible = true
-    var paused = false
+    // MARK: - 选项(全部持久化)
+    private(set) var rtsEnabled: Bool
+    private(set) var dtrEnabled: Bool
+    private(set) var hexDisplay: Bool
+    private(set) var hexSend: Bool
+    private(set) var appendCRLF: Bool
+    private(set) var replaceInvisible: Bool
+    private(set) var paused: Bool
 
     // MARK: - 日志
     private(set) var entries: [LogEntry] = []
@@ -51,6 +51,20 @@ final class SerialManager {
     let baudRates = SerialPort.standardBaudRates
     private let port = SerialPort()
     private let settings: AppSettings
+    private let defaults = UserDefaults.standard
+
+    // 持久化 key
+    private enum Key {
+        static let port = "serial.port"
+        static let baud = "serial.baud"
+        static let rts = "serial.rts"
+        static let dtr = "serial.dtr"
+        static let hexDisplay = "serial.hexDisplay"
+        static let hexSend = "serial.hexSend"
+        static let appendCRLF = "serial.appendCRLF"
+        static let replaceInvisible = "serial.replaceInvisible"
+        static let paused = "serial.paused"
+    }
 
     // 日志文件状态
     private var logFileHandle: FileHandle?
@@ -64,8 +78,28 @@ final class SerialManager {
 
     init(settings: AppSettings) {
         self.settings = settings
+        // 恢复上次的选项(注意区分"未设置过"和"设置为 false")
+        rtsEnabled = defaults.bool(forKey: Key.rts)
+        dtrEnabled = defaults.bool(forKey: Key.dtr)
+        hexDisplay = defaults.bool(forKey: Key.hexDisplay)
+        hexSend = defaults.bool(forKey: Key.hexSend)
+        appendCRLF = defaults.object(forKey: Key.appendCRLF) as? Bool ?? true
+        replaceInvisible = defaults.object(forKey: Key.replaceInvisible) as? Bool ?? true
+        paused = defaults.bool(forKey: Key.paused)
+        selectedBaud = defaults.object(forKey: Key.baud) as? Int ?? 115_200
+        selectedPort = defaults.string(forKey: Key.port) ?? ""
         refreshPorts()
     }
+
+    // MARK: - 选项变更(即时持久化)
+
+    func setHexDisplay(_ value: Bool) { hexDisplay = value; defaults.set(value, forKey: Key.hexDisplay) }
+    func setHexSend(_ value: Bool) { hexSend = value; defaults.set(value, forKey: Key.hexSend) }
+    func setAppendCRLF(_ value: Bool) { appendCRLF = value; defaults.set(value, forKey: Key.appendCRLF) }
+    func setReplaceInvisible(_ value: Bool) { replaceInvisible = value; defaults.set(value, forKey: Key.replaceInvisible) }
+    func setPaused(_ value: Bool) { paused = value; defaults.set(value, forKey: Key.paused) }
+    func setSelectedBaud(_ value: Int) { selectedBaud = value; defaults.set(value, forKey: Key.baud) }
+    func setSelectedPort(_ value: String) { selectedPort = value; defaults.set(value, forKey: Key.port) }
 
     // MARK: - 端口管理
 
@@ -111,11 +145,13 @@ final class SerialManager {
 
     func setRTS(_ enabled: Bool) {
         rtsEnabled = enabled
+        defaults.set(enabled, forKey: Key.rts)
         port.setRTS(enabled)
     }
 
     func setDTR(_ enabled: Bool) {
         dtrEnabled = enabled
+        defaults.set(enabled, forKey: Key.dtr)
         port.setDTR(enabled)
     }
 

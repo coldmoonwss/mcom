@@ -162,8 +162,42 @@ final class QuickCommandStore {
         save()
     }
 
+    /// 删除当前页最后一条命令。
+    func removeLast() {
+        guard !pages[selectedPageIndex].commands.isEmpty else { return }
+        pages[selectedPageIndex].commands.removeLast()
+        save()
+    }
+
     func move(from source: IndexSet, to destination: Int) {
         pages[selectedPageIndex].commands.move(fromOffsets: source, toOffset: destination)
+        save()
+    }
+
+    func moveUp(_ command: QuickCommand) {
+        let commands = pages[selectedPageIndex].commands
+        guard let index = commands.firstIndex(where: { $0.id == command.id }), index > 0 else { return }
+        pages[selectedPageIndex].commands.swapAt(index, index - 1)
+        save()
+    }
+
+    func moveDown(_ command: QuickCommand) {
+        let commands = pages[selectedPageIndex].commands
+        guard let index = commands.firstIndex(where: { $0.id == command.id }),
+              index < commands.count - 1 else { return }
+        pages[selectedPageIndex].commands.swapAt(index, index + 1)
+        save()
+    }
+
+    /// 拖拽排序:把 draggedID 移动到 targetID 的位置。
+    func move(draggedID: UUID, to targetID: UUID) {
+        var commands = pages[selectedPageIndex].commands
+        guard let from = commands.firstIndex(where: { $0.id == draggedID }),
+              let to = commands.firstIndex(where: { $0.id == targetID }),
+              from != to else { return }
+        let item = commands.remove(at: from)
+        commands.insert(item, at: to)
+        pages[selectedPageIndex].commands = commands
         save()
     }
 

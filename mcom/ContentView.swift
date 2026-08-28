@@ -87,23 +87,19 @@ struct ContentView: View {
         }
     }
 
-    /// 选项行:一行放下,空间不足自动换行。
+    /// 选项行:一行放下,空间不足自动换行。所有选项持久化。
     private var optionsRow: some View {
-        @Bindable var serial = serial
+        func bind(_ get: @escaping () -> Bool, _ set: @escaping (Bool) -> Void) -> Binding<Bool> {
+            Binding(get: get, set: set)
+        }
         return FlowLayout(spacing: 12) {
-            Toggle("RTS", isOn: Binding(
-                get: { serial.rtsEnabled },
-                set: { serial.setRTS($0) }
-            ))
-            Toggle("DTR", isOn: Binding(
-                get: { serial.dtrEnabled },
-                set: { serial.setDTR($0) }
-            ))
-            Toggle("HEX显示", isOn: $serial.hexDisplay)
-            Toggle("HEX发送", isOn: $serial.hexSend)
-            Toggle("末尾加回车换行", isOn: $serial.appendCRLF)
-            Toggle("替换不可见字符", isOn: $serial.replaceInvisible)
-            Toggle("停止打印", isOn: $serial.paused)
+            Toggle("RTS", isOn: bind({ serial.rtsEnabled }, { serial.setRTS($0) }))
+            Toggle("DTR", isOn: bind({ serial.dtrEnabled }, { serial.setDTR($0) }))
+            Toggle("HEX显示", isOn: bind({ serial.hexDisplay }, { serial.setHexDisplay($0) }))
+            Toggle("HEX发送", isOn: bind({ serial.hexSend }, { serial.setHexSend($0) }))
+            Toggle("末尾加回车换行", isOn: bind({ serial.appendCRLF }, { serial.setAppendCRLF($0) }))
+            Toggle("替换不可见字符", isOn: bind({ serial.replaceInvisible }, { serial.setReplaceInvisible($0) }))
+            Toggle("停止打印", isOn: bind({ serial.paused }, { serial.setPaused($0) }))
         }
         .toggleStyle(.checkbox)
         .font(.callout)
@@ -160,15 +156,17 @@ struct ContentView: View {
 
     /// 底部状态栏(通栏):刷新串口、串口选择、波特率、状态、字节统计。
     private var statusBar: some View {
-        @Bindable var serial = serial
-        return HStack(spacing: 10) {
+        HStack(spacing: 10) {
             Button("刷新") {
                 serial.refreshPorts()
             }
             .fixedSize()
             .help("刷新串口列表")
 
-            Picker("串口", selection: $serial.selectedPort) {
+            Picker("串口", selection: Binding(
+                get: { serial.selectedPort },
+                set: { serial.setSelectedPort($0) }
+            )) {
                 if serial.availablePorts.isEmpty {
                     Text("无可用串口").tag("")
                 }
@@ -181,7 +179,10 @@ struct ContentView: View {
             .frame(minWidth: 180)
             .disabled(serial.isOpen)
 
-            Picker("波特率", selection: $serial.selectedBaud) {
+            Picker("波特率", selection: Binding(
+                get: { serial.selectedBaud },
+                set: { serial.setSelectedBaud($0) }
+            )) {
                 ForEach(serial.baudRates, id: \.self) { baud in
                     Text(verbatim: "\(baud)").tag(baud)
                 }
@@ -401,20 +402,40 @@ struct QuickCommandPanel: View {
 
             Divider()
 
-            List {
-                ForEach(Array(store.selectedPage.commands.enumerated()), id: \.element.id) { index, command in
-                    QuickCommandRow(
-                        index: index + 1,
-                        command: command,
-                        commandText: commandBinding(for: command.id),
-                        onSend: { serial.send(command.command) }
-                    )
-                    .contextMenu {
-                        Button("修改按钮名称") { renaming = command }
-                        Button("删除", role: .destructive) { store.delete(command) }
+            // 不用 List:NSTableView 驱动下行内 TextField 点击聚焦很慢
+            ScrollView {
+                LazyVStack(spacing: 0) {
+                    ForEach(Array(store.selectedPage.commands.enumerated()), id: \.element.id) { index, command in
+                        QuickCommandRow(
+                            index: index + 1,
+                            command: command,
+                            onCommit: { newText in
+                                var edited = command
+                                edited.command = newText
+                                store.update(edited)
+                            },
+                            onSend: { text in serial.send(text) },
+                            onDropCommand: { draggedID in
+                                store.move(draggedID: draggedID, to: command.id)
+                            }
+                        )
+                        .padding(.horizontal, 8)
+                        .contextMenu {
+                            Button("修改按钮名称") { renaming = command }
+                            Divider()
+                            Button("上移") { store.moveUp(command) }
+                                .disabled(index == 0)
+                            Button("下移") { store.moveDown(command) }
+                                .disabled(index == store.selectedPage.commands.count - 1)
+                            Divider()
+                            Button("删除", role: .destructive) { store.delete(command) }
+                        }
+                        if index < store.selectedPage.commands.count - 1 {
+                            Divider().padding(.leading, 32)
+                        }
                     }
                 }
-                .onMove(perform: store.move)
+                .padding(.vertical, 4)
             }
 
             Divider()
@@ -425,8 +446,18 @@ struct QuickCommandPanel: View {
                     store.add(QuickCommand(title: "", command: ""))
                 } label: {
                     Image(systemName: "plus")
+                        .frame(width: 24, height: 16)
                 }
                 .help("添加命令")
+
+                Button {
+                    store.removeLast()
+                } label: {
+                    Image(systemName: "minus")
+                        .frame(width: 24, height: 16)
+                }
+                .disabled(store.selectedPage.commands.isEmpty)
+                .help("删除最后一条命令")
 
                 Spacer()
 
@@ -434,6 +465,7 @@ struct QuickCommandPanel: View {
                     exportCurrentPage()
                 } label: {
                     Image(systemName: "square.and.arrow.up")
+                        .frame(width: 24, height: 16)
                 }
                 .help("导出当前页")
 
@@ -441,6 +473,7 @@ struct QuickCommandPanel: View {
                     importPage()
                 } label: {
                     Image(systemName: "square.and.arrow.down")
+                        .frame(width: 24, height: 16)
                 }
                 .help("导入为新页")
             }
@@ -530,20 +563,6 @@ struct QuickCommandPanel: View {
         }
     }
 
-    /// 命令内容直接绑定到 Store,输入即保存。
-    private func commandBinding(for id: QuickCommand.ID) -> Binding<String> {
-        Binding(
-            get: {
-                store.selectedPage.commands.first(where: { $0.id == id })?.command ?? ""
-            },
-            set: { newValue in
-                guard var command = store.selectedPage.commands.first(where: { $0.id == id }) else { return }
-                command.command = newValue
-                store.update(command)
-            }
-        )
-    }
-
     // MARK: - 导入导出
 
     private func exportCurrentPage() {
@@ -585,12 +604,19 @@ struct QuickCommandPanel: View {
     }
 }
 
-/// 快捷命令行:序号 + 可编辑命令输入框 + 发送按钮(名称可自定义)。
+/// 快捷命令行:序号(可拖拽排序)+ 可编辑命令输入框 + 发送按钮(名称可自定义)。
+/// 编辑在行内本地进行,停顿 300ms 后才写回 Store,避免每个按键都触发全量持久化和列表重建。
 struct QuickCommandRow: View {
     let index: Int
     let command: QuickCommand
-    @Binding var commandText: String
-    let onSend: () -> Void
+    let onCommit: (String) -> Void
+    let onSend: (String) -> Void
+    /// 拖拽排序:参数是被拖动的命令 id,本行是放置目标
+    let onDropCommand: (UUID) -> Void
+
+    @State private var text = ""
+    @State private var commitTask: Task<Void, Never>?
+    @State private var isDropTargeted = false
 
     var body: some View {
         HStack(spacing: 6) {
@@ -598,15 +624,63 @@ struct QuickCommandRow: View {
                 .monospacedDigit()
                 .foregroundStyle(.secondary)
                 .frame(minWidth: 18, alignment: .trailing)
+                .draggable(command.id.uuidString)
 
-            TextField("命令内容", text: $commandText)
+            TextField("命令内容", text: $text)
                 .textFieldStyle(.roundedBorder)
                 .font(.system(.body, design: .monospaced))
+                .onAppear { text = command.command }
+                .onChange(of: command.command) {
+                    // 外部变更(如导入/其他编辑)时同步,避免覆盖正在输入的内容
+                    if text != command.command { text = command.command }
+                }
+                .onChange(of: text) {
+                    commitTask?.cancel()
+                    commitTask = Task {
+                        try? await Task.sleep(for: .milliseconds(300))
+                        guard !Task.isCancelled else { return }
+                        onCommit(text)
+                    }
+                }
+                // 接管输入框上的放置,防止拖来的命令 id 被当文本插入
+                .dropDestination(for: String.self) { items, _ in
+                    handleDrop(items)
+                } isTargeted: { targeted in
+                    isDropTargeted = targeted
+                }
 
-            Button(command.title.isEmpty ? "发送" : command.title, action: onSend)
-                .disabled(command.command.isEmpty)
+            Button(command.title.isEmpty ? "发送" : command.title) {
+                flushCommit()
+                onSend(text)
+            }
+            .disabled(text.isEmpty)
         }
         .padding(.vertical, 2)
+        .padding(.horizontal, 4)
+        .background(
+            RoundedRectangle(cornerRadius: 6)
+                .fill(isDropTargeted ? Color.accentColor.opacity(0.15) : .clear)
+        )
+        .dropDestination(for: String.self) { items, _ in
+            handleDrop(items)
+        } isTargeted: { targeted in
+            isDropTargeted = targeted
+        }
+        .onDisappear { flushCommit() } // 切换页/关闭时兜底保存
+    }
+
+    private func handleDrop(_ items: [String]) -> Bool {
+        guard let idString = items.first,
+              let id = UUID(uuidString: idString),
+              id != command.id else { return false }
+        onDropCommand(id)
+        return true
+    }
+
+    /// 立即把编辑中的内容写回 Store(发送前调用)。
+    private func flushCommit() {
+        commitTask?.cancel()
+        if text != command.command { onCommit(text) }
     }
 }
 
